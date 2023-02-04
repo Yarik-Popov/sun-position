@@ -30,7 +30,10 @@ spkid = sys.argv[1]
 # Build the appropriate URL for this API request:
 # IMPORTANT: You must encode the "=" as "%3D" and the ";" as "%3B" in the
 #            Horizons COMMAND parameter specification.
-url += "?format=json&EPHEM_TYPE=SPK&OBJ_DATA=NO"
+
+# EPHEM_TYPE: 
+# OBJ_DATA: toggles return of object summary data
+url += "?format=json&EPHEM_TYPE=APPROACH&OBJ_DATA=NO"
 url += "&COMMAND='DES%3D{}%3B'&START_TIME='{}'&STOP_TIME='{}'".format(spkid, start_time, stop_time)
 
 # Submit the API request and decode the JSON-response:
