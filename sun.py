@@ -22,17 +22,19 @@ start_time = '2030-01-01'
 stop_time = '2031-01-01'
 
 # Get the requested SPK-ID from the command-line:
-if (len(sys.argv)) == 1:
-    print("please specify SPK-ID on the command-line")
-    sys.exit(2)
-spkid = sys.argv[1]
-
+# if (len(sys.argv)) == 1:
+#     print("please specify SPK-ID on the command-line")
+#     sys.exit(2)
+# spkid = sys.argv[1]
+spkid = 10
 # Build the appropriate URL for this API request:
 # IMPORTANT: You must encode the "=" as "%3D" and the ";" as "%3B" in the
 #            Horizons COMMAND parameter specification.
-url += "?format=json&EPHEM_TYPE=SPK&OBJ_DATA=NO"
-url += "&COMMAND='DES%3D{}%3B'&START_TIME='{}'&STOP_TIME='{}'".format(spkid, start_time, stop_time)
+ephem_type = 'VECTOR'
 
+url += f"?format=json&EPHEM_TYPE={ephem_type}&OBJ_DATA=NO"
+url += f"&COMMAND='DES%3D{spkid}%3B'&START_TIME='{start_time}'&STOP_TIME='{stop_time}'"
+print(url)
 # Submit the API request and decode the JSON-response:
 response = requests.get(url)
 try:
@@ -51,11 +53,11 @@ if response.status_code == 200:
         try:
             f = open(spk_filename, "wb")
         except OSError as err:
-            print("Unable to open SPK file '{0}': {1}".format(spk_filename, err))
+            print(f"Unable to open SPK file '{spk_filename}': {err}")
         # Decode and write the binary SPK file content:
         f.write(base64.b64decode(data["spk"]))
         f.close()
-        print("wrote SPK content to {0}".format(spk_filename))
+        print(f"wrote SPK content to {spk_filename}")
         sys.exit()
     # Otherwise, the SPK file was not generated so output an error:
     print("ERROR: SPK file not generated")
@@ -69,10 +71,10 @@ if response.status_code == 200:
 if response.status_code == 400:
     data = json.loads(response.text)
     if "message" in data:
-        print("MESSAGE: {}".format(data["message"]))
+        print(f"MESSAGE: {data['message']}")
     else:
         print(json.dumps(data, indent=2))
 
 # Otherwise, some other error occurred:
-print("response code: {0}".format(response.status_code))
+print(f"response code: {response.status_code}")
 sys.exit(2)
