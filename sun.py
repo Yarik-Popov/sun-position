@@ -19,7 +19,7 @@ spk_filename = 'spk_file.bsp'
 
 # Define the time span:
 start_time = '2030-01-01'
-stop_time = '2031-01-01'
+stop_time = '2030-01-02'
 
 # Get the requested SPK-ID from the command-line:
 if (len(sys.argv)) == 1:
@@ -33,8 +33,8 @@ spkid = sys.argv[1]
 
 # EPHEM_TYPE: 
 # OBJ_DATA: toggles return of object summary data
-url += "?format=json&EPHEM_TYPE=APPROACH&OBJ_DATA=NO"
-url += "&COMMAND='DES%3D{}%3B'&START_TIME='{}'&STOP_TIME='{}'".format(spkid, start_time, stop_time)
+url += "?format=json&EPHEM_TYPE=VECTOR&OBJ_DATA=NO&CSV_FORMAT=YES"
+url += "&COMMAND='10%3B'&START_TIME='{}'&STOP_TIME='{}'".format(start_time, stop_time)
 
 # Submit the API request and decode the JSON-response:
 response = requests.get(url)
