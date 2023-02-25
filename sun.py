@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+# import argparse
 import json
 import struct
 import sys
@@ -12,14 +12,14 @@ SUPPORTED_VERSION = '1.2'
 ALWAYS_PRINT = 0  # Prints the required output
 ON_WRITE_PRINT = 1  # Prints helpful output
 VERBOSE_PRINT = 2  # Prints everything
+DATA_FLOAT = 'f'
+DATA_DOUBLE = 'd'
 
 # Script variables used to
 start_time = '2030-01-01'
 stop_time = '2030-01-02'
 ephem_type = 'APPROACH'
 output_format = 'json'
-type_data = 'f'
-error_percentage = 0.01
 target = 'sun'
 step_size = '1m'
 url = f'https://ssd.jpl.nasa.gov/api/horizons.api?format={output_format}&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&COMMAND=' \
@@ -45,13 +45,15 @@ def print_output_if_required(*values, output_type=ALWAYS_PRINT, sep: str | None 
         print(*values, sep=sep, end=end, file=file, flush=flush)
 
 
-def read_write_check(data: str):
+def write_data(data: str, type_data: str):
     """
     Write the parameter data to the output.bin file and check if the written data is within the error bounds
 
+    :param type_data: The type of data to be written ('d' or 'f')
     :param data: Data to be read and written check
     :return: None or ValueError is raised
     """
+    assert type_data == DATA_DOUBLE or type_data == DATA_FLOAT, "Incorrect type"
     expected_data = float(data)
 
     # Appends the data to the file and prints the expected data written if applicable
@@ -60,27 +62,6 @@ def read_write_check(data: str):
         b = struct.pack(type_data, expected_data)
         byte = bytearray(b)
         file.write(byte)
-
-    # Reads the appended data and prints the data written if applicable
-    with open(file_output, 'rb') as file:
-        file.seek(-4, 2)
-        f = file.read(4)
-        actual_data = struct.unpack(type_data, f)[0]
-        print_output_if_required(f'\tActual data written: {actual_data}', output_type=VERBOSE_PRINT)
-
-    lower_bound = expected_data * (1 - error_percentage)
-    upper_bound = expected_data * (1 + error_percentage)
-
-    # Validates data written
-    if actual_data is None:
-        raise ValueError('No data was read in the check')
-    elif not (lower_bound <= actual_data <= upper_bound or upper_bound <= actual_data <= lower_bound):
-        raise ValueError(f'''
-        The written and read input differs greater than the error bounds. 
-        {actual_data = } 
-        {lower_bound = }
-        {upper_bound = } 
-''')
 
 
 def check_version(data: dict):
@@ -131,7 +112,9 @@ def print_header(reverse=False):
 
 
 def main():
+    # TODO: Add argument parsing
     # Submit the API request and decode the JSON-response:
+    type_data = 'f'
     response = requests.get(url)
     validate_response(response)
 
@@ -160,7 +143,7 @@ def main():
 
             print_output_if_required(f'Output written: ', *output, output_type=ON_WRITE_PRINT)
             for j in output:
-                read_write_check(j)
+                write_data(j, type_data)
             count += 1
 
     print_header(True)
