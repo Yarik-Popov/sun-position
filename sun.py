@@ -1,5 +1,5 @@
 from __future__ import annotations
-# import argparse
+import argparse
 import json
 import struct
 import sys
@@ -14,6 +14,9 @@ ON_WRITE_PRINT = 1  # Prints helpful output
 VERBOSE_PRINT = 2  # Prints everything
 DATA_FLOAT = 'f'
 DATA_DOUBLE = 'd'
+DEFAULT_STEP_SIZE = '1m'
+DEFAULT_TARGET = 'sun'
+DEFAULT_FILE_OUTPUT = 'output.bin'
 
 # Script variables used to
 start_time = '2030-01-01'
@@ -27,6 +30,24 @@ url = f'https://ssd.jpl.nasa.gov/api/horizons.api?format={output_format}&MAKE_EP
       f'CAL_FORMAT=JD&VEC_TABLE=1'
 file_output = 'output.bin'
 type_print = ON_WRITE_PRINT
+
+
+def define_parser() -> argparse.ArgumentParser:
+    """
+    Defines the parser for the script
+    :return: The parser
+    """
+
+    parser = argparse.ArgumentParser(description='Sun position calculator')
+    parser.add_argument('start-time', type=str, help='Start time in the format YYYY-MM-DD')
+    parser.add_argument('stop-time', type=str, help='Stop time in the format YYYY-MM-DD')
+    parser.add_argument('-s', '--step-size', type=str, default=DEFAULT_STEP_SIZE)
+    parser.add_argument('-t', '--target', type=str, default=DEFAULT_TARGET)
+    parser.add_argument('-o', '--output', type=str, default=DEFAULT_FILE_OUTPUT)
+    parser.add_argument('-d', '--double', action='store_true', default=False)
+    parser.add_argument('-p', '--print', type=int, choices=range(3), default=ALWAYS_PRINT)
+
+    return parser
 
 
 def print_output_if_required(*values, output_type=ALWAYS_PRINT, sep: str | None = None, end: str | None = None,
@@ -150,5 +171,11 @@ def main():
     print_output_if_required(f'Lines written: {count}')
 
 
+def test():
+    args = define_parser().parse_args()
+    print(args)
+
+
 if __name__ == '__main__':
     main()
+    # test()
