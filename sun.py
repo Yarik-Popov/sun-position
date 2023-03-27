@@ -7,9 +7,9 @@ import sys
 from requests import Response
 import requests
 
-
 # Script constants
 SUPPORTED_VERSION = '1.2'
+NUMBER_OF_HEADER_LINES = 3
 ALWAYS_PRINT = 0  # Prints the required output
 ON_WRITE_PRINT = 1  # Prints helpful output
 VERBOSE_PRINT = 2  # Prints everything
@@ -20,6 +20,8 @@ DEFAULT_TARGET = 'sun'
 DEFAULT_FILE_OUTPUT = 'output.bin'
 DEFAULT_EXCLUDE = 'last'
 
+# Global variable for the type of print (ALWAYS_PRINT, ON_WRITE_PRINT, VERBOSE_PRINT) set by the -p argument similar
+# debug levels
 type_print = ON_WRITE_PRINT
 
 
@@ -43,11 +45,11 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument('-p', '--print', type=int, choices=range(3), default=ALWAYS_PRINT,
                         help=f'Prints the output to the console. 0 = Always, 1 = On write, 2 = Verbose. '
                              f'Default: {ALWAYS_PRINT}')
-    # Change to store_false if you want to override the output file by default
-    parser.add_argument('-w', '--write', action='store_true', help='Overrides the output file')
+    parser.add_argument('-a', '--append', action='store_true', help='Appends to the output file')
     parser.add_argument('-e', '--exclude', choices=['first', 'last', 'both', 'none'], default=DEFAULT_EXCLUDE,
                         help=f'Exclude the first, last, both or none of the values from the output file. '
                              f'Default: {DEFAULT_EXCLUDE}')
+    parser.add_argument('-n', '--no-header', action='store_false', help='Does not print the header to the output file')
 
     return parser
 
@@ -136,20 +138,50 @@ def print_header(reverse=False):
         print_output_if_required('-' * 130, output_type=ON_WRITE_PRINT)
 
 
+def write_header(file_output: str, min_jd: float, max_jd: float, count: float, is_double: bool):
+    """
+    Writes the header of the data to the output file
+
+    :param is_double: If True then the data is written as a double precision (8 bytes) otherwise it is written as a
+    float. Also writes the first byte of the file to indicate the precision. 0 = float, 1 = double
+    :param count: The number of the data points
+    :param max_jd: The maximum JD
+    :param min_jd: The minimum JD
+    :param file_output: The output file
+    """
+    data = [min_jd, max_jd, count]
+
+    with open(file_output, 'rb+') as file:
+        print_output_if_required(f'Writing header to {file_output}', output_type=VERBOSE_PRINT)
+        file.seek(0)
+        if is_double:
+            output_type = DATA_DOUBLE
+            file.write(b'1')
+        else:
+            output_type = DATA_FLOAT
+            file.write(b'0')
+
+        for i in data:
+            print_output_if_required(f'\tData written: {i}', output_type=VERBOSE_PRINT)
+            b = struct.pack(output_type, i)
+            byte: bytearray = bytearray(b)
+            file.write(byte)
+
+
 def main():
-    # TODO: Add argument parsing
     # Submit the API request and decode the JSON-response:
     args = define_parser().parse_args()
     url = f'https://ssd.jpl.nasa.gov/api/horizons.api?format=json&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&COMMAND=' \
           f'{args.target}&OBJ_DATA=NO&STEP_SIZE={args.step_size}&START_TIME={args.start_time}&STOP_TIME=' \
           f'{args.stop_time}&CSV_FORMAT=YES&CAL_FORMAT=JD&VEC_TABLE=1'
 
+    global type_print  # This is not good practice, but it is the easiest way to do it
+    type_print = args.print
     response = requests.get(url)
     validate_response(response)
 
     try:
         data = json.loads(response.text)
-        print(data)
     except ValueError:
         print("Unable to decode JSON results")
         raise ValueError
@@ -160,6 +192,8 @@ def main():
     count = 0
     total_count = 0
     lines_written = 0
+    min_jd = 0
+    max_jd = 0
     print_header()
 
     # Find total number of lines to be written
@@ -172,8 +206,16 @@ def main():
             total_count += 1
 
     # Overwrite the output file if it exists
-    if args.write and os.path.exists(args.output):
+    if not args.append and os.path.exists(args.output):
         os.remove(args.output)
+
+    with open(args.output, 'ab') as file:
+        file.write(b'0')
+        for i in range(NUMBER_OF_HEADER_LINES):
+            if args.double:
+                file.write(struct.pack(DATA_DOUBLE, 0))
+            else:
+                file.write(struct.pack(DATA_FLOAT, 0))
 
     # Loop over response
     for i in lines:
@@ -181,12 +223,17 @@ def main():
             start = True
         if i.startswith('$$EOE'):
             start = False
+        # If the line is not the start or end of the data then it is a line of data
         if start and not i.startswith('$$SOE'):
             if not ((count == 0 and (args.exclude == 'both' or args.exclude == 'first'))
                     or (count == total_count - 1) and (args.exclude == 'both' or args.exclude == 'last')):
                 print_output_if_required(f'Line being parsed: {i}', output_type=VERBOSE_PRINT)
                 output = (i[:-1].split(', '))
                 output.pop(1)
+                jd = float(output[0])
+                if min_jd == 0:
+                    min_jd = jd
+                max_jd = jd
 
                 print_output_if_required(f'Output written: ', *output, output_type=ON_WRITE_PRINT)
                 for j in output:
@@ -194,8 +241,49 @@ def main():
                 lines_written += 1
             count += 1
 
+    if args.no_header:
+        write_header(args.output, min_jd, max_jd, lines_written, args.double)
+
     print_header(True)
     print_output_if_required(f'Lines written: {lines_written}')
+
+    # for testing purposes
+    test_file(lines_written, args.double, args.output)
+
+
+def test_file(lines_written: int, double: bool, file_output: str):
+    """
+    Tests the output file to ensure that the data was written correctly
+
+    :param lines_written:
+    :param double:
+    :param file_output:
+    """
+
+    if double:
+        read_type = DATA_DOUBLE
+        read_size = 8
+    else:
+        read_type = DATA_FLOAT
+        read_size = 4
+
+    with open(file_output, "rb") as file:
+        file.seek(0)
+        val = file.read(1)
+        print(val)
+        for i in range(NUMBER_OF_HEADER_LINES):
+            byte_str = file.read(read_size)
+            float_val = struct.unpack(read_type, byte_str)[0]
+            print(float_val)
+
+        print()
+
+        for i in range(lines_written * 4):
+            byte_str = file.read(read_size)
+            float_val = struct.unpack(read_type, byte_str)[0]
+            print(float_val)
+            if i % 4 == 3:
+                print()
 
 
 if __name__ == '__main__':
