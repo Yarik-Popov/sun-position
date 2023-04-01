@@ -1,11 +1,12 @@
 from __future__ import annotations
 import argparse
 import json
-import os
 import struct
 import sys
 from requests import Response
 import requests
+import logging
+import re
 
 # Script constants
 SUPPORTED_VERSION = '1.2'
@@ -25,16 +26,65 @@ DEFAULT_EXCLUDE = 'last'
 type_print = ON_WRITE_PRINT
 
 
+def is_float(num: str):
+    """
+    Checks if the parameter is a float
+    :param num:
+    :return: True if the parameter is a float otherwise False
+    """
+    try:
+        float(num)
+        return True
+    except ValueError:
+        return False
+
+
+def validate_input(args: argparse.Namespace):
+    """
+    Validates the input arguments created by the define_parser() function. If all the inputs are valid then it will
+    do nothing otherwise it will exit the script
+    :param args: The arguments created by the define_parser() function
+    """
+    # Regex for time format
+    time_regex = re.compile(r'^[1-9]\d{3}-\d{2}-\d{2}$')
+
+    # use the regex to check if the start time is in the correct format
+    if not time_regex.match(args.start_time) and not args.start_time.startswith('JD'):
+        logging.critical('Start time must be in the format YYYY-MM-DD or JD#')
+        sys.exit(10)
+
+    # Checks if the start time is in the correct format
+    if not args.start_time.startswith('JD') and len(args.start_time.split('-')) != 3:
+        logging.critical('Start time must be in the format YYYY-MM-DD or JD#')
+        sys.exit(10)
+
+    # Checks if the stop time is in the correct format
+    if not args.stop_time.startswith('JD') and len(args.stop_time.split('-')) != 3:
+        logging.critical('Stop time must be in the format YYYY-MM-DD or JD#')
+        sys.exit(11)
+
+    # Checks if the step size is in the correct format
+    if not args.step_size[-1] in ['y', 'm', 'd', 'h', 's'] and not args.step_size[:-1].isnumeric() \
+            and not args.step_size.isnumeric():
+        logging.critical('Step size must be in the format #y, #m, #d, #h, #s, or #. Where # is a integer')
+        sys.exit(12)
+
+    # Checks if the output file is in the correct format
+    if not args.output.endswith('.bin'):
+        logging.critical('Output file must be in the format *.bin')
+        sys.exit(13)
+
+
 def define_parser() -> argparse.ArgumentParser:
     """
     Defines the parser for the script
     :return: The parser
     """
     parser = argparse.ArgumentParser(description='Position Ephemeris Retriever')
-    parser.add_argument('start_time', type=str, help='Start time in the format YYYY-MM-DD or JD')
-    parser.add_argument('stop_time', type=str, help='Stop time in the format YYYY-MM-DD or JD')
+    parser.add_argument('start_time', type=str, help='Start time in the format YYYY-MM-DD or JD#')
+    parser.add_argument('stop_time', type=str, help='Stop time in the format YYYY-MM-DD or JD#')
     parser.add_argument('-s', '--step-size', type=str, default=DEFAULT_STEP_SIZE,
-                        help=f'Step size in the same format as the horizontal API (e.g. 1m, 1h, 1d, 1y, JD100). '
+                        help=f'Step size in the same format as the horizontal API (e.g. 1m, 1h, 1d, 1y, 100). '
                              f'Default: {DEFAULT_STEP_SIZE}')
     parser.add_argument('-t', '--target', type=str, default=DEFAULT_TARGET,
                         help=f'Target object (e.g. sun, moon, mars). Default: {DEFAULT_TARGET}')
@@ -45,11 +95,13 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument('-p', '--print', type=int, choices=range(3), default=ALWAYS_PRINT,
                         help=f'Prints the output to the console. 0 = Always, 1 = On write, 2 = Verbose. '
                              f'Default: {ALWAYS_PRINT}')
-    parser.add_argument('-a', '--append', action='store_true', help='Appends to the output file')
     parser.add_argument('-e', '--exclude', choices=['first', 'last', 'both', 'none'], default=DEFAULT_EXCLUDE,
                         help=f'Exclude the first, last, both or none of the values from the output file. '
                              f'Default: {DEFAULT_EXCLUDE}')
-    parser.add_argument('-n', '--no-header', action='store_false', help='Does not print the header to the output file')
+    parser.add_argument('-v', '--verbose', action='store_true', default=False,
+                        help='Verbose output used for debugging purposes. Default: False')
+    parser.add_argument('-l', '--log', type=str, default=None,
+                        help='Log file for debugging purposes. Default: None')
 
     return parser
 
@@ -98,7 +150,7 @@ def check_version(data: dict):
     :param data: response.txt
     """
     if (data.get('signature')).get('version') != SUPPORTED_VERSION:
-        print_output_if_required('WARNING: UNSUPPORTED HORIZON API VERSION USED')
+        logging.warning('WARNING: UNSUPPORTED HORIZON API VERSION USED')
 
 
 def validate_response(response: Response):
@@ -111,12 +163,12 @@ def validate_response(response: Response):
     if response.status_code == 400:
         data = json.loads(response.text)
         if "message" in data:
-            print_output_if_required(f"Message: {data['message']}")
+            logging.critical(f"Message: {data['message']}")
         else:
-            print_output_if_required(json.dumps(data, indent=2))
+            logging.critical(json.dumps(data, indent=2))
         sys.exit(1)
     if response.status_code != 200:
-        print_output_if_required(f'{response.status_code = }')
+        logging.critical(f'{response.status_code = }')
         sys.exit(2)
 
 
@@ -155,25 +207,47 @@ def write_header(file_output: str, min_jd: float, max_jd: float, count: float, i
         print_output_if_required(f'Writing header to {file_output}', output_type=VERBOSE_PRINT)
         file.seek(0)
         if is_double:
-            output_type = DATA_DOUBLE
             file.write(b'1')
         else:
-            output_type = DATA_FLOAT
             file.write(b'0')
 
         for i in data:
             print_output_if_required(f'\tData written: {i}', output_type=VERBOSE_PRINT)
-            b = struct.pack(output_type, i)
+            b = struct.pack(DATA_DOUBLE, i)
             byte: bytearray = bytearray(b)
             file.write(byte)
 
 
+def find_number_of_data_points(lines: [str]):
+    """
+    Finds the number of data points in the data
+
+    :param lines: The lines of the data
+    :return: The number of data points
+    """
+    total_count = 0
+    start = False
+    for i in lines:
+        if i.startswith('$$SOE'):
+            start = True
+        if i.startswith('$$EOE'):
+            start = False
+        if start and not i.startswith('$$SOE'):
+            total_count += 1
+
+    return total_count
+
+
 def main():
-    # Submit the API request and decode the JSON-response:
+    # TODO: Ask for next steps
+    # Parse the arguments and set up the url for the request and logging:
     args = define_parser().parse_args()
+    validate_input(args)
+
     url = f'https://ssd.jpl.nasa.gov/api/horizons.api?format=json&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&COMMAND=' \
           f'{args.target}&OBJ_DATA=NO&STEP_SIZE={args.step_size}&START_TIME={args.start_time}&STOP_TIME=' \
           f'{args.stop_time}&CSV_FORMAT=YES&CAL_FORMAT=JD&VEC_TABLE=1'
+    logging.basicConfig(filename=args.log, level=logging.DEBUG if args.verbose else logging.INFO, encoding='utf-8')
 
     global type_print  # This is not good practice, but it is the easiest way to do it
     type_print = args.print
@@ -183,39 +257,27 @@ def main():
     try:
         data = json.loads(response.text)
     except ValueError:
-        print("Unable to decode JSON results")
+        logging.critical('Invalid JSON response')
         raise ValueError
 
-    lines = data.get('result').split('\n')
     check_version(data)
+    lines = data.get('result').split('\n')
+
+    # Find total number of lines to be written
+    total_count = find_number_of_data_points(lines)
+
+    # Overwrite the output file and allocates the space for the header
+    with open(args.output, 'wb') as file:
+        file.write(b'0')
+        for i in range(NUMBER_OF_HEADER_LINES):
+            file.write(struct.pack(DATA_DOUBLE, 0))
+
     start = False
     count = 0
-    total_count = 0
     lines_written = 0
     min_jd = 0
     max_jd = 0
     print_header()
-
-    # Find total number of lines to be written
-    for i in lines:
-        if i.startswith('$$SOE'):
-            start = True
-        if i.startswith('$$EOE'):
-            start = False
-        if start and not i.startswith('$$SOE'):
-            total_count += 1
-
-    # Overwrite the output file if it exists
-    if not args.append and os.path.exists(args.output):
-        os.remove(args.output)
-
-    with open(args.output, 'ab') as file:
-        file.write(b'0')
-        for i in range(NUMBER_OF_HEADER_LINES):
-            if args.double:
-                file.write(struct.pack(DATA_DOUBLE, 0))
-            else:
-                file.write(struct.pack(DATA_FLOAT, 0))
 
     # Loop over response
     for i in lines:
@@ -230,9 +292,11 @@ def main():
                 print_output_if_required(f'Line being parsed: {i}', output_type=VERBOSE_PRINT)
                 output = (i[:-1].split(', '))
                 output.pop(1)
+
                 jd = float(output[0])
                 if min_jd == 0:
                     min_jd = jd
+                output[0] = str(jd - min_jd)
                 max_jd = jd
 
                 print_output_if_required(f'Output written: ', *output, output_type=ON_WRITE_PRINT)
@@ -241,9 +305,7 @@ def main():
                 lines_written += 1
             count += 1
 
-    if args.no_header:
-        write_header(args.output, min_jd, max_jd, lines_written, args.double)
-
+    write_header(args.output, min_jd, max_jd, lines_written, args.double)
     print_header(True)
     print_output_if_required(f'Lines written: {lines_written}')
 
@@ -272,8 +334,8 @@ def test_file(lines_written: int, double: bool, file_output: str):
         val = file.read(1)
         print(val)
         for i in range(NUMBER_OF_HEADER_LINES):
-            byte_str = file.read(read_size)
-            float_val = struct.unpack(read_type, byte_str)[0]
+            byte_str = file.read(8)
+            float_val = struct.unpack(DATA_DOUBLE, byte_str)[0]
             print(float_val)
 
         print()
