@@ -7,23 +7,37 @@ from requests import Response
 import requests
 import logging
 import re
+from typing import Final
+from typing import List
+from dataclasses import dataclass
 
 # Script constants
-SUPPORTED_VERSION = '1.2'
-NUMBER_OF_HEADER_LINES = 3
+SUPPORTED_VERSION: Final[str] = '1.2'
+NUMBER_OF_HEADER_LINES: Final[int] = 3
 ALWAYS_PRINT = 0  # Prints the required output
 ON_WRITE_PRINT = 1  # Prints helpful output
 VERBOSE_PRINT = 2  # Prints everything
 DATA_FLOAT = 'f'
 DATA_DOUBLE = 'd'
-DEFAULT_STEP_SIZE = '1m'
-DEFAULT_TARGET = 'sun'
-DEFAULT_FILE_OUTPUT = 'output.bin'
-DEFAULT_EXCLUDE = 'last'
+DEFAULT_STEP_SIZE: Final[str] = '1m'
+DEFAULT_TARGET: Final[str] = 'sun'
+DEFAULT_FILE_OUTPUT: Final[str] = 'output.bin'
+DEFAULT_EXCLUDE: Final[str] = 'last'
 
 # Global variable for the type of print (ALWAYS_PRINT, ON_WRITE_PRINT, VERBOSE_PRINT) set by the -p argument similar
 # debug levels
 type_print = ON_WRITE_PRINT
+
+
+@dataclass
+class DataPoint:
+    """
+    Data class to store the data points
+    """
+    jd: float
+    x: float
+    y: float
+    z: float
 
 
 def is_float(num: str):
@@ -39,27 +53,32 @@ def is_float(num: str):
         return False
 
 
+def is_valid_time(time: str):
+    """
+    Checks if the parameter is a valid time
+    :param time:
+    :return: True if the parameter is a valid time otherwise False
+    """
+    # Regex for time format
+    time_regex = re.compile(r'^[1-9]\d{3}-\d{2}-\d{2}$')
+
+    return time_regex.match(time) or (time.startswith('JD') and is_float(time[2:]))
+
+
 def validate_input(args: argparse.Namespace):
     """
     Validates the input arguments created by the define_parser() function. If all the inputs are valid then it will
     do nothing otherwise it will exit the script
     :param args: The arguments created by the define_parser() function
     """
-    # Regex for time format
-    time_regex = re.compile(r'^[1-9]\d{3}-\d{2}-\d{2}$')
-
+    
     # use the regex to check if the start time is in the correct format
-    if not time_regex.match(args.start_time) and not args.start_time.startswith('JD'):
-        logging.critical('Start time must be in the format YYYY-MM-DD or JD#')
-        sys.exit(10)
-
-    # Checks if the start time is in the correct format
-    if not args.start_time.startswith('JD') and len(args.start_time.split('-')) != 3:
+    if not is_valid_time(args.start_time):
         logging.critical('Start time must be in the format YYYY-MM-DD or JD#')
         sys.exit(10)
 
     # Checks if the stop time is in the correct format
-    if not args.stop_time.startswith('JD') and len(args.stop_time.split('-')) != 3:
+    if not is_valid_time(args.stop_time):
         logging.critical('Stop time must be in the format YYYY-MM-DD or JD#')
         sys.exit(11)
 
@@ -167,6 +186,7 @@ def validate_response(response: Response):
         else:
             logging.critical(json.dumps(data, indent=2))
         sys.exit(1)
+
     if response.status_code != 200:
         logging.critical(f'{response.status_code = }')
         sys.exit(2)
@@ -190,7 +210,7 @@ def print_header(reverse=False):
         print_output_if_required('-' * 130, output_type=ON_WRITE_PRINT)
 
 
-def write_header(file_output: str, min_jd: float, max_jd: float, count: float, is_double: bool):
+def write_header(file_output: str, min_jd: float, max_jd: float, count: float, is_double: bool, write_to_file=True):
     """
     Writes the header of the data to the output file
 
@@ -200,7 +220,11 @@ def write_header(file_output: str, min_jd: float, max_jd: float, count: float, i
     :param max_jd: The maximum JD
     :param min_jd: The minimum JD
     :param file_output: The output file
+    :param write_to_file: If True then the header is written to the file
     """
+    if not write_to_file:
+        return
+
     data = [min_jd, max_jd, count]
 
     with open(file_output, 'rb+') as file:
@@ -218,7 +242,7 @@ def write_header(file_output: str, min_jd: float, max_jd: float, count: float, i
             file.write(byte)
 
 
-def find_number_of_data_points(lines: [str]):
+def find_number_of_data_points(lines: List[str]) -> int:
     """
     Finds the number of data points in the data
 
@@ -238,10 +262,28 @@ def find_number_of_data_points(lines: [str]):
     return total_count
 
 
-def main():
-    # TODO: Ask for next steps
+def allocate_header(write_to_file: bool, file_output: str):
+    """
+    Overwrites the output file and allocates the space for the header
+
+    :param write_to_file: If True then the header is written to the file
+    :param file_output: The output file
+    """
+    if not write_to_file:
+        return
+    
+    with open(file_output, 'wb') as file:
+        file.write(b'0')
+        for _ in range(NUMBER_OF_HEADER_LINES):
+            file.write(struct.pack(DATA_DOUBLE, 0))
+
+
+def main(argsv: str | None = None, *, write_to_file=True) -> List[DataPoint]:
     # Parse the arguments and set up the url for the request and logging:
-    args = define_parser().parse_args()
+    if isinstance(argsv, str):
+        args = define_parser().parse_args(argsv.split())
+    else:
+        args = define_parser().parse_args()
     validate_input(args)
 
     url = f'https://ssd.jpl.nasa.gov/api/horizons.api?format=json&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&COMMAND=' \
@@ -267,10 +309,7 @@ def main():
     total_count = find_number_of_data_points(lines)
 
     # Overwrite the output file and allocates the space for the header
-    with open(args.output, 'wb') as file:
-        file.write(b'0')
-        for i in range(NUMBER_OF_HEADER_LINES):
-            file.write(struct.pack(DATA_DOUBLE, 0))
+    allocate_header(write_to_file, args.output)
 
     start = False
     count = 0
@@ -310,42 +349,7 @@ def main():
     print_output_if_required(f'Lines written: {lines_written}')
 
     # for testing purposes
-    test_file(lines_written, args.double, args.output)
 
-
-def test_file(lines_written: int, double: bool, file_output: str):
-    """
-    Tests the output file to ensure that the data was written correctly
-
-    :param lines_written:
-    :param double:
-    :param file_output:
-    """
-
-    if double:
-        read_type = DATA_DOUBLE
-        read_size = 8
-    else:
-        read_type = DATA_FLOAT
-        read_size = 4
-
-    with open(file_output, "rb") as file:
-        file.seek(0)
-        val = file.read(1)
-        print(val)
-        for i in range(NUMBER_OF_HEADER_LINES):
-            byte_str = file.read(8)
-            float_val = struct.unpack(DATA_DOUBLE, byte_str)[0]
-            print(float_val)
-
-        print()
-
-        for i in range(lines_written * 4):
-            byte_str = file.read(read_size)
-            float_val = struct.unpack(read_type, byte_str)[0]
-            print(float_val)
-            if i % 4 == 3:
-                print()
 
 
 if __name__ == '__main__':
