@@ -24,8 +24,10 @@ DEFAULT_STEP_SIZE: Final[str] = '1m'
 DEFAULT_TARGET: Final[str] = 'sun'
 DEFAULT_FILE_OUTPUT: Final[str] = 'output.bin'
 DEFAULT_EXCLUDE: Final[str] = 'last'
+
 SIZE_OF_DOUBLE: Final[int] = 8
-SIZE_OF_HEADER: Final[int] = 1 + SIZE_OF_DOUBLE * NUMBER_OF_HEADER_LINES
+SIZE_OF_FLOAT: Final[int] = 4
+SIZE_OF_HEADER: Final[int] = SIZE_OF_DOUBLE * NUMBER_OF_HEADER_LINES
 RELATIVE_TOLERANCE: Final[float] = 1e-7
 
 # Global variable for the type of print (ALWAYS_PRINT, ON_WRITE_PRINT, VERBOSE_PRINT) set by the -p argument similar
@@ -60,10 +62,9 @@ class Header:
     """
     Data class to store the header information
     """
-    is_double: bool
     start_time: float
     step_size: float
-    number_of_points: int
+    num_data_points: int
 
 
 def is_float(num: str):
@@ -135,8 +136,6 @@ def define_parser() -> argparse.ArgumentParser:
                         help=f'Target object (e.g. sun, moon, mars). Default: {DEFAULT_TARGET}')
     parser.add_argument('-o', '--output', type=str, default=DEFAULT_FILE_OUTPUT,
                         help=f'Output file name. Default: {DEFAULT_FILE_OUTPUT}')
-    parser.add_argument('-d', '--double', action='store_true', default=False,
-                        help='Use double precision (8 bytes). Default: False (4 bytes) or float')
     parser.add_argument('-p', '--print', type=int, choices=range(3), default=ALWAYS_PRINT,
                         help=f'Prints the output to the console. 0 = Always, 1 = On write, 2 = Verbose. '
                              f'Default: {ALWAYS_PRINT}')
@@ -214,44 +213,34 @@ def print_header(reverse=False):
         print_output_if_required('-' * 130, output_type=ON_WRITE_PRINT)
 
 
-def write_data(data: DataPoint, is_double: bool, file_output: str):
+def write_data(data: DataPoint, file_output: str):
     """
     Write the parameter data to the output.bin file and check if the written data is within the error bounds
 
     :param file_output: The output file
     :param data: Data to be read and written check
-    :param is_double: If True then the data is written as a double precision (8 bytes)
-    otherwise it is written as a float
     """
-    data_format = DATA_DOUBLE if is_double else DATA_FLOAT
-
     # Appends the data to the file and prints the expected data written if applicable
     with open(file_output, 'ab') as file:
         print_output_if_required(f'\tData written: {data}', output_type=VERBOSE_PRINT)
 
-        # Write the JD value
-        bjd = struct.pack(data_format, float(data.jd))
-        file.write(bytearray(bjd))
-
         # Write the x value
-        bx = struct.pack(data_format, data.x)
+        bx = struct.pack(DATA_FLOAT, data.x)
         file.write(bytearray(bx))
 
         # Write the y value
-        by = struct.pack(data_format, data.y)
+        by = struct.pack(DATA_FLOAT, data.y)
         file.write(bytearray(by))
 
         # Write the z value
-        bz = struct.pack(data_format, data.z)
+        bz = struct.pack(DATA_FLOAT, data.z)
         file.write(bytearray(bz))
 
 
-def write_header(file_output: str, min_jd: float, max_jd: float, count: float, is_double: bool, write_to_file=True):
+def write_header(file_output: str, min_jd: float, max_jd: float, count: float, *, write_to_file=True):
     """
     Writes the header of the data to the output file
 
-    :param is_double: If True then the data is written as a double precision (8 bytes) otherwise it is written as a
-    float. Also writes the first byte of the file to indicate the precision. 0 = float, 1 = double
     :param count: The number of the data points
     :param max_jd: The maximum JD
     :param min_jd: The minimum JD
@@ -261,16 +250,12 @@ def write_header(file_output: str, min_jd: float, max_jd: float, count: float, i
     if not write_to_file:
         return
 
-    data = [min_jd, max_jd, count]
+    data = [min_jd, calculate_step_size(min_jd, max_jd, int(count)), count]
+    print(f'{data = }')
 
     with open(file_output, 'rb+') as file:
         print_output_if_required(f'Writing header to {file_output}', output_type=VERBOSE_PRINT)
         file.seek(0)
-        if is_double:
-            file.write(b'1')
-        else:
-            file.write(b'0')
-
         for i in data:
             print_output_if_required(f'\tData written: {i}', output_type=VERBOSE_PRINT)
             b = struct.pack(DATA_DOUBLE, i)
@@ -309,7 +294,8 @@ def allocate_header(write_to_file: bool, file_output: str):
         return
 
     with open(file_output, 'wb') as file:
-        file.write(bytes(SIZE_OF_HEADER))
+        b = bytes(SIZE_OF_HEADER)
+        file.write(b)
 
 
 def calculate_step_size(min_jd: float, max_jd: float, number_of_data_points: int) -> float:
@@ -394,17 +380,16 @@ def main(argsv: str | None = None, *, write_to_file=True) -> List[DataPoint]:
                 jd = float(output[0])
                 if min_jd == 0:
                     min_jd = jd
-                output[0] = (jd - min_jd)
                 max_jd = jd
 
                 print_output_if_required(f'Output written: ', *output, output_type=ON_WRITE_PRINT)
-                data_point = DataPoint(output[0], float(output[1]), float(output[2]), float(output[3]))
+                data_point = DataPoint(float(output[0]), float(output[1]), float(output[2]), float(output[3]))
                 data_points.append(data_point)
-                write_data(data_point, args.double, args.output)
+                write_data(data_point, args.output)
                 lines_written += 1
             count += 1
 
-    write_header(args.output, min_jd, max_jd, lines_written, args.double)
+    write_header(args.output, min_jd, max_jd, lines_written)
     print_header(True)
     print_output_if_required(f'Lines written: {lines_written}')
 

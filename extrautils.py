@@ -1,10 +1,11 @@
 import sun
 from sun import DataPoint
+from sun import Header
 from typing import List, BinaryIO
 import struct
 
 
-def read_header(file_input: str) -> List:
+def read_header(file_input: str) -> Header:
     """
     Tests the header file to ensure that the data was read correctly
 
@@ -12,29 +13,28 @@ def read_header(file_input: str) -> List:
     """
     with open(file_input, "rb") as file:
         file.seek(0)
-        output = [file.read(1)]
-        for _ in range(sun.NUMBER_OF_HEADER_LINES):
-            byte_str = file.read(8)
-            float_val = struct.unpack(sun.DATA_DOUBLE, byte_str)[0]
-            output.append(float_val)
-    return output
+        start_time = get_single_data_point(file, False)
+        step_size = get_single_data_point(file, False)
+        num_data_points = int(get_single_data_point(file, False))
+        print(start_time)
+        print(step_size)
+        print(num_data_points)
+        return Header(start_time, step_size, num_data_points)
 
 
-def get_single_data_point(file: BinaryIO, read_type: str) -> float:
+def get_single_data_point(file: BinaryIO, is_float=True) -> float:
     """
     Tests the output file to ensure that the data was written correctly
 
-    :param file:
-    :param read_type:
+    :param is_float: If true, then will parse as float, otherwise will parse as double
+    :param file: The file to read from
     """
-    if read_type == b'1':
-        read_type = sun.DATA_DOUBLE
-        read_size = 8
-        print("double")
-    else:
+    if is_float:
         read_type = sun.DATA_FLOAT
         read_size = 4
-        print("float")
+    else:
+        read_type = sun.DATA_DOUBLE
+        read_size = 8
 
     byte_str = file.read(read_size)
     float_val = struct.unpack(read_type, byte_str)[0]
@@ -49,14 +49,14 @@ def read_file(file_output: str) -> List[DataPoint]:
     """
     output = []
     header = read_header(file_output)
-    rt = header[0]
 
     with open(file_output, "rb") as file:
         file.seek(sun.SIZE_OF_HEADER)
 
-        for i in range(int(header[3])):
-            data_point = DataPoint(get_single_data_point(file, rt), get_single_data_point(file, rt),
-                                   get_single_data_point(file, rt), get_single_data_point(file, rt))
+        for i in range(header.num_data_points):
+            jd = header.start_time + (i * header.step_size)
+            data_point = DataPoint(jd, get_single_data_point(file),
+                                   get_single_data_point(file), get_single_data_point(file))
             output.append(data_point)
 
     return output
@@ -65,9 +65,14 @@ def read_file(file_output: str) -> List[DataPoint]:
 def main():
     expected = sun.main('2020-01-01 2020-01-02 -s 5m')
     actual = read_file('output.bin')
-    assert len(expected) == len(actual)
-    assert expected == actual
+    print(f'{len(expected) = }')
+    print(f'{len(actual) = }')
     print(expected)
+    assert len(expected) == len(actual)
+    for i in range(len(expected)):
+        print(f'{expected[i] = }')
+        print(f'{actual[i] = }')
+    assert expected == actual
     print()
     print(actual)
 

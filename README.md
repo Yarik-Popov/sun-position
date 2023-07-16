@@ -37,13 +37,11 @@ Use double precision (8 bytes). Default: False (4 bytes) or float
 
 ## Contents of the output file:
 ### Header:
-- 1 byte: 0x00 or 0x01 (0x00 = single precision or 4 bytes, 0x01 = double precision or 8 bytes) (DEPRECATED)
 - 8 bytes: Start time in JD (min_jd)
 - 8 bytes: Step size of data points (step_size) (NEED TO ADD)
 - 8 bytes: Number of data points (n)
 
 ### Data: n data points of a total of 16 or 32 (depending on the precision) bytes per data point
-- precision bytes: JD - min_jd (DEPRECATED - WILL BE CALCULATED VALUE BASED ON STEP SIZE AND START TIME)
 - precision bytes: x
 - precision bytes: y
 - precision bytes: z
