@@ -1,69 +1,13 @@
 import sun
-from sun import DataPoint
-from typing import List
-import struct
-
-
-def read_header(file_input: str) -> List:
-    """
-    Tests the header file to ensure that the data was read correctly
-
-    :param file_input:
-    """
-    with open(file_input, "rb") as file:
-        file.seek(0)
-        output = [file.read(1)]
-        for _ in sun.HEADER_LINES:
-            byte_str = file.read(8)
-            float_val = struct.unpack(sun.DATA_DOUBLE, byte_str)[0]
-            output.append(float_val)
-    return output
-
-
-def read_file(file_output: str) -> List[DataPoint]:
-    """
-    Tests the output file to ensure that the data was written correctly
-
-    :param lines_written:
-    :param double:
-    :param file_output:
-    """
-    output = []
-    header = read_header(file_output)
-
-    if header[0]:
-        read_type = sun.DATA_DOUBLE
-        read_size = 8
-    else:
-        read_type = sun.DATA_FLOAT
-        read_size = 4
-
-    with open(file_output, "rb") as file:
-        file.seek(0)
-        val = file.read(1)
-        print(val)
-        for i in range(sun.NUMBER_OF_HEADER_LINES):
-            byte_str = file.read(8)
-            float_val = struct.unpack(sun.DATA_DOUBLE, byte_str)[0]
-            print(float_val)
-
-        print()
-
-        for i in range(header[3] * 4):
-            byte_str = file.read(read_size)
-            float_val = struct.unpack(read_type, byte_str)[0]
-            print(float_val)
-            if i % 4 == 3:
-                print()
-    return output
+import pytest
 
 
 def test_is_float0():
-    assert sun.is_float(1.0)
+    assert sun.is_float('-1.0')
 
 
 def test_is_float1():
-    assert sun.is_float(1) 
+    assert sun.is_float('1')
 
 
 def test_is_float2():
@@ -112,6 +56,42 @@ def test_is_valid_time2():
 
 def test_is_valid_time3():
     assert not sun.is_valid_time("2020-01-02 12:00:00")
+
+
+def test_calculate_step_size0():
+    assert sun.calculate_step_size(1, 1, 1) == 0
+
+
+def test_calculate_step_size1():
+    assert sun.calculate_step_size(1, 3, 2) == 2
+
+
+def test_calculate_step_size2():
+    assert sun.calculate_step_size(1, 7, 4) == 2
+
+
+def test_calculate_step_size3():
+    assert sun.calculate_step_size(10, 110, 11) == 10
+
+
+def test_calculate_step_size4():
+    with pytest.raises(ValueError) as _:
+        sun.calculate_step_size(1, 1, 0)
+
+
+def test_calculate_step_size5():
+    with pytest.raises(ValueError) as _:
+        sun.calculate_step_size(1, 1, -1)
+
+
+def test_calculate_step_size6():
+    with pytest.raises(ValueError) as _:
+        sun.calculate_step_size(1, 1, 2)
+
+
+def test_calculate_step_size7():
+    with pytest.raises(ValueError) as _:
+        sun.calculate_step_size(3, 1, 3)
 
 
 def main():

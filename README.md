@@ -3,7 +3,7 @@
 Script for parsing data from the NASA Horizon API used by ADCS for onboard algorithms
 
 ## Requirements:
-Check the requirements.txt file for the latest version of the requirements
+Check the requirements.txt file for the latest version of the requirements (pip install -r requirements.txt)
 - Python
 - Requests (pip install requests)
 - PyTest (pip install pytest)

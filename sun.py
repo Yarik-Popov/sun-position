@@ -10,6 +10,7 @@ import re
 from typing import Final
 from typing import List
 from dataclasses import dataclass
+from math import isclose
 
 # Script constants
 SUPPORTED_VERSION: Final[str] = '1.2'
@@ -23,6 +24,9 @@ DEFAULT_STEP_SIZE: Final[str] = '1m'
 DEFAULT_TARGET: Final[str] = 'sun'
 DEFAULT_FILE_OUTPUT: Final[str] = 'output.bin'
 DEFAULT_EXCLUDE: Final[str] = 'last'
+SIZE_OF_DOUBLE: Final[int] = 8
+SIZE_OF_HEADER: Final[int] = 1 + SIZE_OF_DOUBLE * NUMBER_OF_HEADER_LINES
+RELATIVE_TOLERANCE: Final[float] = 1e-7
 
 # Global variable for the type of print (ALWAYS_PRINT, ON_WRITE_PRINT, VERBOSE_PRINT) set by the -p argument similar
 # debug levels
@@ -38,6 +42,28 @@ class DataPoint:
     x: float
     y: float
     z: float
+
+    def __eq__(self, other):
+        """
+        Checks if the two data points are equal
+        :param other: The other data point
+        :return: True if the two data points are equal otherwise False
+        """
+        return isclose(self.jd, other.jd, rel_tol=RELATIVE_TOLERANCE) and \
+               isclose(self.x, other.x, rel_tol=RELATIVE_TOLERANCE) and \
+               isclose(self.y, other.y, rel_tol=RELATIVE_TOLERANCE) and \
+               isclose(self.z, other.z, rel_tol=RELATIVE_TOLERANCE)
+
+
+@dataclass
+class Header:
+    """
+    Data class to store the header information
+    """
+    is_double: bool
+    start_time: float
+    step_size: float
+    number_of_points: int
 
 
 def is_float(num: str):
@@ -71,7 +97,7 @@ def validate_input(args: argparse.Namespace):
     do nothing otherwise it will exit the script
     :param args: The arguments created by the define_parser() function
     """
-    
+
     # use the regex to check if the start time is in the correct format
     if not is_valid_time(args.start_time):
         logging.critical('Start time must be in the format YYYY-MM-DD or JD#')
@@ -141,28 +167,6 @@ def print_output_if_required(*values, output_type=ALWAYS_PRINT, sep: str | None 
         print(*values, sep=sep, end=end, file=file, flush=flush)
 
 
-def write_data(data: str, is_double: bool, file_output: str):
-    """
-    Write the parameter data to the output.bin file and check if the written data is within the error bounds
-
-    :param file_output: The output file
-    :param data: Data to be read and written check
-    :param is_double: If True then the data is written as a double precision (8 bytes)
-    otherwise it is written as a float
-    """
-    expected_data = float(data)
-
-    # Appends the data to the file and prints the expected data written if applicable
-    with open(file_output, 'ab') as file:
-        print_output_if_required(f'\tData written: {expected_data}', output_type=VERBOSE_PRINT)
-        if is_double:
-            b = struct.pack(DATA_DOUBLE, expected_data)
-        else:
-            b = struct.pack(DATA_FLOAT, expected_data)
-        byte: bytearray = bytearray(b)
-        file.write(byte)
-
-
 def check_version(data: dict):
     """
     Prints out a warning if the version is difference from the supported one
@@ -208,6 +212,38 @@ def print_header(reverse=False):
         print_output_if_required('\t' * 3, 'JD:', '\t' * 4, 'X:', '\t' * 5, 'Y:', '\t' * 4, 'Z:',
                                  output_type=ON_WRITE_PRINT)
         print_output_if_required('-' * 130, output_type=ON_WRITE_PRINT)
+
+
+def write_data(data: DataPoint, is_double: bool, file_output: str):
+    """
+    Write the parameter data to the output.bin file and check if the written data is within the error bounds
+
+    :param file_output: The output file
+    :param data: Data to be read and written check
+    :param is_double: If True then the data is written as a double precision (8 bytes)
+    otherwise it is written as a float
+    """
+    data_format = DATA_DOUBLE if is_double else DATA_FLOAT
+
+    # Appends the data to the file and prints the expected data written if applicable
+    with open(file_output, 'ab') as file:
+        print_output_if_required(f'\tData written: {data}', output_type=VERBOSE_PRINT)
+
+        # Write the JD value
+        bjd = struct.pack(data_format, float(data.jd))
+        file.write(bytearray(bjd))
+
+        # Write the x value
+        bx = struct.pack(data_format, data.x)
+        file.write(bytearray(bx))
+
+        # Write the y value
+        by = struct.pack(data_format, data.y)
+        file.write(bytearray(by))
+
+        # Write the z value
+        bz = struct.pack(data_format, data.z)
+        file.write(bytearray(bz))
 
 
 def write_header(file_output: str, min_jd: float, max_jd: float, count: float, is_double: bool, write_to_file=True):
@@ -271,28 +307,50 @@ def allocate_header(write_to_file: bool, file_output: str):
     """
     if not write_to_file:
         return
-    
+
     with open(file_output, 'wb') as file:
-        file.write(b'0')
-        for _ in range(NUMBER_OF_HEADER_LINES):
-            file.write(struct.pack(DATA_DOUBLE, 0))
+        file.write(bytes(SIZE_OF_HEADER))
+
+
+def calculate_step_size(min_jd: float, max_jd: float, number_of_data_points: int) -> float:
+    """
+    Calculates the step size of the data
+
+    :param min_jd: The minimum JD
+    :param max_jd: The maximum JD
+    :param number_of_data_points: The number of data points
+    :return: The step size
+    """
+    if max_jd < min_jd:
+        raise ValueError('The maximum JD is less than the minimum JD')
+
+    if min_jd == max_jd and number_of_data_points > 1:
+        raise ValueError('The minimum JD is equal to the maximum JD but there is more than one data point')
+
+    if number_of_data_points < 1:
+        raise ValueError('The number of data points is less than 1')
+
+    if number_of_data_points == 1:
+        return 0
+
+    return (max_jd - min_jd) / (number_of_data_points - 1)
 
 
 def main(argsv: str | None = None, *, write_to_file=True) -> List[DataPoint]:
-    # Parse the arguments and set up the url for the request and logging:
+    # Parse the arguments and set logging
     if isinstance(argsv, str):
         args = define_parser().parse_args(argsv.split())
     else:
         args = define_parser().parse_args()
     validate_input(args)
+    global type_print  # This is not good practice, but it is the easiest way to do it
+    type_print = args.print
+    logging.basicConfig(filename=args.log, level=logging.DEBUG if args.verbose else logging.INFO, encoding='utf-8')
 
+    # Get the data from the API
     url = f'https://ssd.jpl.nasa.gov/api/horizons.api?format=json&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&COMMAND=' \
           f'{args.target}&OBJ_DATA=NO&STEP_SIZE={args.step_size}&START_TIME={args.start_time}&STOP_TIME=' \
           f'{args.stop_time}&CSV_FORMAT=YES&CAL_FORMAT=JD&VEC_TABLE=1'
-    logging.basicConfig(filename=args.log, level=logging.DEBUG if args.verbose else logging.INFO, encoding='utf-8')
-
-    global type_print  # This is not good practice, but it is the easiest way to do it
-    type_print = args.print
     response = requests.get(url)
     validate_response(response)
 
@@ -316,6 +374,7 @@ def main(argsv: str | None = None, *, write_to_file=True) -> List[DataPoint]:
     lines_written = 0
     min_jd = 0
     max_jd = 0
+    data_points = []
     print_header()
 
     # Loop over response
@@ -335,12 +394,13 @@ def main(argsv: str | None = None, *, write_to_file=True) -> List[DataPoint]:
                 jd = float(output[0])
                 if min_jd == 0:
                     min_jd = jd
-                output[0] = str(jd - min_jd)
+                output[0] = (jd - min_jd)
                 max_jd = jd
 
                 print_output_if_required(f'Output written: ', *output, output_type=ON_WRITE_PRINT)
-                for j in output:
-                    write_data(j, args.double, args.output)
+                data_point = DataPoint(output[0], float(output[1]), float(output[2]), float(output[3]))
+                data_points.append(data_point)
+                write_data(data_point, args.double, args.output)
                 lines_written += 1
             count += 1
 
@@ -348,9 +408,8 @@ def main(argsv: str | None = None, *, write_to_file=True) -> List[DataPoint]:
     print_header(True)
     print_output_if_required(f'Lines written: {lines_written}')
 
-    # for testing purposes
-
+    return data_points
 
 
 if __name__ == '__main__':
-    main()
+    main('2020-01-01 2020-01-03 -p 2')
