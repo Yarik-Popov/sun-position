@@ -20,7 +20,7 @@ ON_WRITE_PRINT = 1  # Prints helpful output
 VERBOSE_PRINT = 2  # Prints everything
 DATA_FLOAT = 'f'
 DATA_DOUBLE = 'd'
-DEFAULT_STEP_SIZE: Final[str] = '1m'
+DEFAULT_STEP_SIZE: Final[str] = '5m'
 DEFAULT_TARGET: Final[str] = 'sun'
 DEFAULT_FILE_OUTPUT: Final[str] = 'output.bin'
 DEFAULT_EXCLUDE: Final[str] = 'last'
@@ -397,4 +397,4 @@ def main(argsv: str | None = None, *, write_to_file=True) -> List[DataPoint]:
 
 
 if __name__ == '__main__':
-    main('2020-01-01 2020-01-03 -p 2')
+    main('JD1000 JD1001')

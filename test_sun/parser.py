@@ -1,6 +1,7 @@
-import sun
-from sun import DataPoint
-from sun import Header
+import os.path
+from sun import ephemeris
+from sun.ephemeris import DataPoint
+from sun.ephemeris import Header
 from typing import List, BinaryIO
 import struct
 
@@ -30,10 +31,10 @@ def get_single_data_point(file: BinaryIO, is_float=True) -> float:
     :param file: The file to read from
     """
     if is_float:
-        read_type = sun.DATA_FLOAT
+        read_type = ephemeris.DATA_FLOAT
         read_size = 4
     else:
-        read_type = sun.DATA_DOUBLE
+        read_type = ephemeris.DATA_DOUBLE
         read_size = 8
 
     byte_str = file.read(read_size)
@@ -51,7 +52,7 @@ def read_file(file_output: str) -> List[DataPoint]:
     header = read_header(file_output)
 
     with open(file_output, "rb") as file:
-        file.seek(sun.SIZE_OF_HEADER)
+        file.seek(ephemeris.SIZE_OF_HEADER)
 
         for i in range(header.num_data_points):
             jd = header.start_time + (i * header.step_size)
@@ -63,8 +64,9 @@ def read_file(file_output: str) -> List[DataPoint]:
 
 
 def main():
-    expected = sun.main('2020-01-01 2020-01-02 -s 5m')
-    actual = read_file('output.bin')
+    file = os.path.join('..', 'test_sun', 'test1.bin')
+    expected = ephemeris.main(f'2020-01-01 2020-01-02 -s 5m -o {file}')
+    actual = read_file('test1.bin')
     print(f'{len(expected) = }')
     print(f'{len(actual) = }')
     print(expected)
