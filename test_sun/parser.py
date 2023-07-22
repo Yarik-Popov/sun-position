@@ -80,6 +80,7 @@ def main():
     for i in range(len(expected)):
         print(f'{expected[i] = }')
         print(f'{actual[i] = }')
+        print()
     assert expected == actual
 
 

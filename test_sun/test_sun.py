@@ -1,4 +1,6 @@
 from sun import ephemeris
+from sun.ephemeris import ErrorCode
+import logging
 import pytest
 
 
@@ -94,9 +96,73 @@ def test_calculate_step_size7():
         ephemeris.calculate_step_size(3, 1, 3)
 
 
-def main():
-    pass
+# Helper function to suppress logging during tests
+def suppress_logging(caplog):
+    for handler in logging.getLogger().handlers:
+        caplog.set_level(logging.ERROR, logger=handler.name)
 
 
-if __name__ == "__main__":
-    main()
+# Test cases for validate_input function
+@pytest.mark.parametrize("start_time, stop_time, step_size, output, expected_result", [
+    ("2023-07-20", "2023-07-25", "1d", "output.bin", ErrorCode.SUCCESS),
+    ("2023-07-20", "2023-07-25", "1w", "output.bin", ErrorCode.INVALID_STEP_SIZE),
+    ("2023-07-20", "2023-07-25", "1m", "output.dat", ErrorCode.INVALID_OUTPUT_FILE),
+    ("2023-07-20", "2023-07-25", "1y", "output.bin", ErrorCode.SUCCESS),
+    ("2023-07-20", "2023-07-25", "invalid", "output.bin", ErrorCode.INVALID_STEP_SIZE),
+    ("2023-07-20", "2023-07-25", "3", "output.bin", ErrorCode.SUCCESS),
+    ("2023-07-20", "2023-07-25", "1h", "output.bin", ErrorCode.SUCCESS),
+    ("2023-07-20", "2023-07-25", "1", "output.bin", ErrorCode.SUCCESS),
+    ("2023-07-20", "2023-07-25", "100", "output.bin", ErrorCode.SUCCESS),
+    ("2023-07-20", "2023-07-25", "1y", "output.txt", ErrorCode.INVALID_OUTPUT_FILE),
+    ("2023-07-20", "2023-07-25", "1y", "output.bin.txt", ErrorCode.INVALID_OUTPUT_FILE),
+    ("2023-07-20", "2023-07-25", "1y", "output.bin.bin", ErrorCode.SUCCESS),
+])
+def test_validate_input(start_time, stop_time, step_size, output, expected_result, caplog):
+    # Suppress logging messages during the test
+    suppress_logging(caplog)
+
+    result = ephemeris.validate_input(start_time, stop_time, step_size, output)
+    assert result == expected_result
+
+
+# Additional test cases to check if error codes are returned correctly
+def test_validate_input_invalid_start_time(caplog):
+    # Suppress logging messages during the test
+    suppress_logging(caplog)
+
+    start_time = "invalid_start_time"
+    stop_time = "2023-07-25"
+    step_size = "1d"
+    output = "output.bin"
+
+    result = ephemeris.validate_input(start_time, stop_time, step_size, output)
+    assert result == ErrorCode.INVALID_START_TIME
+    assert "Start time must be in the format YYYY-MM-DD or JD#" in caplog.text
+
+
+def test_validate_input_invalid_stop_time(caplog):
+    # Suppress logging messages during the test
+    suppress_logging(caplog)
+
+    start_time = "2023-07-20"
+    stop_time = "invalid_stop_time"
+    step_size = "1d"
+    output = "output.bin"
+
+    result = ephemeris.validate_input(start_time, stop_time, step_size, output)
+    assert result == ErrorCode.INVALID_STOP_TIME
+    assert "Stop time must be in the format YYYY-MM-DD or JD#" in caplog.text
+
+
+def test_validate_input_invalid_output_file(caplog):
+    # Suppress logging messages during the test
+    suppress_logging(caplog)
+
+    start_time = "2023-07-20"
+    stop_time = "2023-07-25"
+    step_size = "1d"
+    output = "output.txt"
+
+    result = ephemeris.validate_input(start_time, stop_time, step_size, output)
+    assert result == ErrorCode.INVALID_OUTPUT_FILE
+    assert "Output file must be in the format *.bin" in caplog.text

@@ -11,6 +11,7 @@ from typing import Final
 from typing import List
 from dataclasses import dataclass
 from math import isclose
+from enum import Enum
 
 # Script constants
 SUPPORTED_VERSION: Final[str] = '1.2'
@@ -38,6 +39,14 @@ SIZE_OF_HEADER: Final[int] = SIZE_OF_DOUBLE * NUMBER_OF_HEADER_DOUBLES + SIZE_OF
 # Global variable for the type of print (ALWAYS_PRINT, ON_WRITE_PRINT, VERBOSE_PRINT) set by the -p argument similar
 # debug levels
 type_print = ON_WRITE_PRINT
+
+
+class ErrorCode(Enum):
+    SUCCESS = 0
+    INVALID_START_TIME = 10
+    INVALID_STOP_TIME = 11
+    INVALID_STEP_SIZE = 12
+    INVALID_OUTPUT_FILE = 13
 
 
 @dataclass
@@ -87,33 +96,38 @@ def is_valid_time(time: str):
     return time_regex.match(time) or (time.startswith('JD') and is_float(time[2:]))
 
 
-def validate_input(args: argparse.Namespace):
+def validate_input(start_time: str, stop_time: str, step_size: str, output: str) -> ErrorCode:
     """
     Validates the input arguments created by the define_parser() function. If all the inputs are valid then it will
-    do nothing otherwise it will exit the script
-    :param args: The arguments created by the define_parser() function
+    do return a success code otherwise it return an error code
+
+    :param start_time: Start time in the format YYYY-MM-DD or JD#
+    :param stop_time: Stop time in the format YYYY-MM-DD or JD#
+    :param step_size: Step size in the same format as the horizontal API (e.g. 1m, 1h, 1d, 1y, 100)
+    :param output: Output file name in the format *.bin
     """
 
     # use the regex to check if the start time is in the correct format
-    if not is_valid_time(args.start_time):
+    if not is_valid_time(start_time):
         logging.critical('Start time must be in the format YYYY-MM-DD or JD#')
-        sys.exit(10)
+        return ErrorCode.INVALID_START_TIME
 
     # Checks if the stop time is in the correct format
-    if not is_valid_time(args.stop_time):
+    if not is_valid_time(stop_time):
         logging.critical('Stop time must be in the format YYYY-MM-DD or JD#')
-        sys.exit(11)
+        return ErrorCode.INVALID_STOP_TIME
 
     # Checks if the step size is in the correct format
-    if not args.step_size[-1] in ['y', 'm', 'd', 'h', 's'] and not args.step_size[:-1].isnumeric() \
-            and not args.step_size.isnumeric():
+    if not ((step_size[-1] in ['y', 'm', 'd', 'h', 's'] and step_size[:-1].isnumeric()) or step_size.isnumeric()):
         logging.critical('Step size must be in the format #y, #m, #d, #h, #s, or #. Where # is an integer')
-        sys.exit(12)
+        return ErrorCode.INVALID_STEP_SIZE
 
     # Checks if the output file is in the correct format
-    if not args.output.endswith('.bin'):
+    if not output.endswith('.bin'):
         logging.critical('Output file must be in the format *.bin')
-        sys.exit(13)
+        return ErrorCode.INVALID_OUTPUT_FILE
+
+    return ErrorCode.SUCCESS
 
 
 def define_parser() -> argparse.ArgumentParser:
@@ -326,7 +340,11 @@ def main(argsv: str | None = None, *, write_to_file=True) -> List[DataPoint]:
         args = define_parser().parse_args(argsv.split())
     else:
         args = define_parser().parse_args()
-    validate_input(args)
+
+    error_code = validate_input(args.start_time, args.stop_time, args.step_size, args.output)
+    if error_code != ErrorCode.SUCCESS:
+        raise ValueError(f'Invalid input: {error_code}')
+
     global type_print  # This is not good practice, but it is the easiest way to do it
     type_print = args.print
     logging.basicConfig(filename=args.log, level=logging.DEBUG if args.verbose else logging.INFO, encoding='utf-8')
