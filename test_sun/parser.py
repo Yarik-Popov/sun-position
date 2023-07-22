@@ -1,25 +1,32 @@
 import os.path
 from sun import ephemeris
 from sun.ephemeris import DataPoint
-from sun.ephemeris import Header
 from typing import List, BinaryIO
 import struct
+from dataclasses import dataclass
 
 
-def read_header(file_input: str) -> Header:
+@dataclass
+class Header:
+    """
+    Data class to store the header information
+    """
+    start_time: float
+    step_size: float
+    num_data_points: int
+
+
+def parse_header(file: str) -> Header:
     """
     Tests the header file to ensure that the data was read correctly
 
-    :param file_input:
+    :param file: The file to read from
     """
-    with open(file_input, "rb") as file:
+    with open(file, "rb") as file:
         file.seek(0)
         start_time = get_single_data_point(file, False)
         step_size = get_single_data_point(file, False)
-        num_data_points = int(get_single_data_point(file, False))
-        print(start_time)
-        print(step_size)
-        print(num_data_points)
+        num_data_points = int(struct.unpack(ephemeris.DATA_UINT, file.read(ephemeris.SIZE_OF_INT))[0])
         return Header(start_time, step_size, num_data_points)
 
 
@@ -32,26 +39,26 @@ def get_single_data_point(file: BinaryIO, is_float=True) -> float:
     """
     if is_float:
         read_type = ephemeris.DATA_FLOAT
-        read_size = 4
+        read_size = ephemeris.SIZE_OF_FLOAT
     else:
         read_type = ephemeris.DATA_DOUBLE
-        read_size = 8
+        read_size = ephemeris.SIZE_OF_DOUBLE
 
     byte_str = file.read(read_size)
     float_val = struct.unpack(read_type, byte_str)[0]
     return float(float_val)
 
 
-def read_file(file_output: str) -> List[DataPoint]:
+def parse_file(file: str) -> List[DataPoint]:
     """
     Tests the output file to ensure that the data was written correctly
 
-    :param file_output:
+    :param file: The file to read from
     """
     output = []
-    header = read_header(file_output)
+    header = parse_header(file)
 
-    with open(file_output, "rb") as file:
+    with open(file, "rb") as file:
         file.seek(ephemeris.SIZE_OF_HEADER)
 
         for i in range(header.num_data_points):
@@ -64,19 +71,20 @@ def read_file(file_output: str) -> List[DataPoint]:
 
 
 def main():
-    file = os.path.join('..', 'test_sun', 'test1.bin')
-    expected = ephemeris.main(f'2020-01-01 2020-01-02 -s 5m -o {file}')
-    actual = read_file('test1.bin')
+    file_path = os.path.join('..', 'test_sun', 'test1.bin')
+    expected = ephemeris.main(f'2020-01-01 2020-01-02 -s 5m -o {file_path}')
+    actual = parse_file('test1.bin')
     print(f'{len(expected) = }')
     print(f'{len(actual) = }')
-    print(expected)
     assert len(expected) == len(actual)
     for i in range(len(expected)):
         print(f'{expected[i] = }')
         print(f'{actual[i] = }')
     assert expected == actual
-    print()
-    print(actual)
+
+
+def test():
+    print(parse_file('..//sun//output.bin'))
 
 
 if __name__ == '__main__':

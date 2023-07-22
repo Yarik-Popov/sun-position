@@ -21,13 +21,11 @@ options:
 -  -h, --help           <br>
 show this help message and exit
 -  -s STEP_SIZE, --step-size STEP_SIZE <br>
-                        Step size in the same format as the horizontal API (e.g. 1m, 1h, 1d, 1y, 100). Default: 1m
+                        Step size in the same format as the horizontal API (e.g. 1m, 1h, 1d, 1y, 100). Default: 5m
 -  -t TARGET, --target TARGET <br>
                         Target object (e.g. sun, moon, mars). Default: sun
 -  -o OUTPUT, --output OUTPUT <br>
                         Output file name. Default: output.bin
--  -d, --double       <br>
-Use double precision (8 bytes). Default: False (4 bytes) or float
 -  -p {0,1,2}, --print {0,1,2} <br>
                         Prints the output to the console. 0 = Always, 1 = On write, 2 = Verbose. Default: 0
 -  -e {first,last,both,none}, --exclude {first,last,both,none} <br>
@@ -37,11 +35,11 @@ Use double precision (8 bytes). Default: False (4 bytes) or float
 
 ## Contents of the output file:
 ### Header:
-- 8 bytes: Start time in JD (min_jd)
-- 8 bytes: Step size of data points (step_size) (NEED TO ADD)
-- 8 bytes: Number of data points (n)
+- 8 bytes: Start time in JD (min_jd) (type: double)
+- 8 bytes: Step size of data points (step_size) (type: double)
+- 4 bytes: Number of data points (n) (type: uint)
 
-### Data: n data points of a total of 16 or 32 (depending on the precision) bytes per data point
-- precision bytes: x
-- precision bytes: y
-- precision bytes: z
+### Data: n data points of a total of 12 bytes per data point (all floats)
+- 4 bytes: x
+- 4 bytes: y
+- 4 bytes: z

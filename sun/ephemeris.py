@@ -14,21 +14,26 @@ from math import isclose
 
 # Script constants
 SUPPORTED_VERSION: Final[str] = '1.2'
-NUMBER_OF_HEADER_LINES: Final[int] = 3
+NUMBER_OF_HEADER_DOUBLES: Final[int] = 2
 ALWAYS_PRINT = 0  # Prints the required output
 ON_WRITE_PRINT = 1  # Prints helpful output
 VERBOSE_PRINT = 2  # Prints everything
 DATA_FLOAT = 'f'
 DATA_DOUBLE = 'd'
+DATA_UINT = 'I'
+RELATIVE_TOLERANCE: Final[float] = 1e-7
+
+# Default values
 DEFAULT_STEP_SIZE: Final[str] = '5m'
 DEFAULT_TARGET: Final[str] = 'sun'
 DEFAULT_FILE_OUTPUT: Final[str] = 'output.bin'
 DEFAULT_EXCLUDE: Final[str] = 'last'
 
+# Size constants
 SIZE_OF_DOUBLE: Final[int] = 8
 SIZE_OF_FLOAT: Final[int] = 4
-SIZE_OF_HEADER: Final[int] = SIZE_OF_DOUBLE * NUMBER_OF_HEADER_LINES
-RELATIVE_TOLERANCE: Final[float] = 1e-7
+SIZE_OF_INT: Final[int] = 4
+SIZE_OF_HEADER: Final[int] = SIZE_OF_DOUBLE * NUMBER_OF_HEADER_DOUBLES + SIZE_OF_INT
 
 # Global variable for the type of print (ALWAYS_PRINT, ON_WRITE_PRINT, VERBOSE_PRINT) set by the -p argument similar
 # debug levels
@@ -55,16 +60,6 @@ class DataPoint:
                isclose(self.x, other.x, rel_tol=RELATIVE_TOLERANCE) and \
                isclose(self.y, other.y, rel_tol=RELATIVE_TOLERANCE) and \
                isclose(self.z, other.z, rel_tol=RELATIVE_TOLERANCE)
-
-
-@dataclass
-class Header:
-    """
-    Data class to store the header information
-    """
-    start_time: float
-    step_size: float
-    num_data_points: int
 
 
 def is_float(num: str):
@@ -112,7 +107,7 @@ def validate_input(args: argparse.Namespace):
     # Checks if the step size is in the correct format
     if not args.step_size[-1] in ['y', 'm', 'd', 'h', 's'] and not args.step_size[:-1].isnumeric() \
             and not args.step_size.isnumeric():
-        logging.critical('Step size must be in the format #y, #m, #d, #h, #s, or #. Where # is a integer')
+        logging.critical('Step size must be in the format #y, #m, #d, #h, #s, or #. Where # is an integer')
         sys.exit(12)
 
     # Checks if the output file is in the correct format
@@ -237,7 +232,7 @@ def write_data(data: DataPoint, file_output: str):
         file.write(bytearray(bz))
 
 
-def write_header(file_output: str, min_jd: float, max_jd: float, count: float, *, write_to_file=True):
+def write_header(file_output: str, min_jd: float, max_jd: float, count: int, *, write_to_file=True):
     """
     Writes the header of the data to the output file
 
@@ -250,17 +245,20 @@ def write_header(file_output: str, min_jd: float, max_jd: float, count: float, *
     if not write_to_file:
         return
 
-    data = [min_jd, calculate_step_size(min_jd, max_jd, int(count)), count]
-    print(f'{data = }')
+    data = [min_jd, calculate_step_size(min_jd, max_jd, count)]
 
     with open(file_output, 'rb+') as file:
         print_output_if_required(f'Writing header to {file_output}', output_type=VERBOSE_PRINT)
         file.seek(0)
+
         for i in data:
             print_output_if_required(f'\tData written: {i}', output_type=VERBOSE_PRINT)
             b = struct.pack(DATA_DOUBLE, i)
             byte: bytearray = bytearray(b)
             file.write(byte)
+
+        byte_count = struct.pack(DATA_UINT, int(count))
+        file.write(bytearray(byte_count))
 
 
 def find_number_of_data_points(lines: List[str]) -> int:
@@ -397,4 +395,4 @@ def main(argsv: str | None = None, *, write_to_file=True) -> List[DataPoint]:
 
 
 if __name__ == '__main__':
-    main('JD1000 JD1001')
+    main()
